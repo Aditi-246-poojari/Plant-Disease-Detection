@@ -11,16 +11,14 @@ st.write("Upload an image of a plant leaf to identify potential diseases.")
 # 2. Load the trained model
 @st.cache_resource
 def load_my_model():
-    # Cache the model so it doesn't reload on every button click
-    return tf.keras.models.load_model('plant_disease_mobilenetv2.h5')
+    return tf.keras.models.load_model('plant_disease_mobilenetv2.h5', compile=False)
 
 try:
     model = load_my_model()
 except Exception as e:
     st.error(f"Error loading model file: {e}")
 
-# 3. Explicit list of all 38 classes in your dataset order
-# NOTE: Ensure these exactly match your training dataset folder order!
+# 3. Explicit list of all 38 classes
 CLASS_NAMES = [
     'Apple___Apple_scab', 'Apple___Black_rot', 'Apple___Cedar_apple_rust', 'Apple___healthy',
     'Blueberry___healthy', 'Cherry_(including_sour)___Powdery_mildew', 'Cherry_(including_sour)___healthy',
@@ -41,30 +39,32 @@ CLASS_NAMES = [
 uploaded_file = st.file_uploader("Choose a leaf image...", type=["jpg", "jpeg", "png"])
 
 if uploaded_file is not None:
-    # Display the uploaded image
+    # Display the uploaded image (Updated to 'stretch' to fix the layout warning)
     image = Image.open(uploaded_file)
-    st.image(image, caption='Uploaded Image', use_container_width=True)
+    st.image(image, caption='Uploaded Image', width='stretch')
     
     st.write("🔄 Analyzing the image...")
     
-    # Preprocess the image exactly like your training pipeline
-    # 1. Resize to match MobileNetV2 expected shape (224, 224)
+    # Preprocess the image
     img = image.resize((224, 224))
     img_array = np.array(img)
     
-    # Handle cases where image might be RGBA instead of RGB
     if img_array.shape[-1] == 4:
         img_array = img_array[..., :3]
         
-    # 2. Scale pixels (1./255) and add batch dimension
     img_array = img_array / 255.0
     img_array = np.expand_dims(img_array, axis=0)
     
-  # 5. Make prediction
+    # 5. Make prediction safely using NumPy arrays
     predictions = model.predict(img_array)
     
-    # Apply softmax to get true probabilities (0 to 1)
-    probabilities = tf.nn.softmax(predictions[0]).numpy()
+    # Compute probabilities purely using NumPy to prevent UI freezes
+    exp_preds = np.exp(predictions[0] - np.max(predictions[0]))
+    probabilities = exp_preds / exp_preds.sum()
     
     predicted_class_idx = np.argmax(probabilities)
     confidence = probabilities[predicted_class_idx] * 100
+    
+    # 6. Output the results instantly
+    st.subheader(f"Result: **{CLASS_NAMES[predicted_class_idx]}**")
+    st.info(f"Confidence Level: **{confidence:.2f}%**")
