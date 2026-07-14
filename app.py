@@ -15,18 +15,19 @@ st.set_page_config(
 st.title("🌱 Botanical Health Diagnoser")
 st.write("Upload a photo of a plant leaf to detect potential diseases instantly.")
 
-# 1. Load the active trained H5 model structure matrix safely
+# 1. Safely load the lightweight TFLite model configuration
 @st.cache_resource
-def load_diagnostic_model():
-    # Load model weights without rebuilding dynamic training configurations
-    model = tf.keras.models.load_model('botanical_diagnostic_mobilenetv2.h5', compile=False)
-    model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
-    return model
+def load_tflite_model():
+    interpreter = tf.lite.Interpreter(model_path="botanical_diagnostic_model.tflite")
+    interpreter.allocate_tensors()
+    return interpreter
 
-if os.path.exists('botanical_diagnostic_mobilenetv2.h5'):
-    classifier_model = load_diagnostic_model()
+if os.path.exists('botanical_diagnostic_model.tflite'):
+    interpreter = load_tflite_model()
+    input_details = interpreter.get_input_details()
+    output_details = interpreter.get_output_details()
 else:
-    st.error("Missing 'botanical_diagnostic_mobilenetv2.h5'. Make sure your model file is pushed to the root of your GitHub repository.")
+    st.error("Missing 'botanical_diagnostic_model.tflite'. Ensure it is pushed to the root of your GitHub repository.")
     st.stop()
 
 # 2. Dynamically load index configurations map
@@ -46,14 +47,18 @@ if uploaded_file is not None:
     st.image(user_image, caption="Uploaded Leaf Specimen", use_container_width=True)
     
     with st.spinner("🔄 Running diagnostics matrix inference..."):
-        # Standard image pre-processing configurations pipeline
+        # Pre-processing to match the exact input shape expected by the TFLite model
         resized_img = user_image.resize((224, 224)).convert('RGB')
-        img_array = np.array(resized_img)
+        img_array = np.array(resized_img, dtype=np.float32)
         expanded_tensor = np.expand_dims(img_array, axis=0)
         normalized_tensor = expanded_tensor / 255.0
         
-        # Calculate inference probability metrics matrix
-        prediction_scores = classifier_model.predict(normalized_tensor)
+        # Set tensor data and run the TFLite interpreter step
+        interpreter.set_tensor(input_details[0]['index'], normalized_tensor)
+        interpreter.invoke()
+        
+        # Extract classification scores output matrix
+        prediction_scores = interpreter.get_tensor(output_details[0]['index'])
         highest_idx = np.argmax(prediction_scores[0])
         confidence = prediction_scores[0][highest_idx] * 100
         
